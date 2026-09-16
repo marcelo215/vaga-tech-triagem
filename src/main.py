@@ -20,9 +20,9 @@ def avaliar_filtros_rigidos(texto, anos_minimos, salario_maximo):
     print(f"Buscando requisitos mínimos: {anos_minimos} anos de exp / Orçamento máximo: R$ {salario_maximo}")
     aprovado = True
     if "anos" in texto_minusculo:
-        print("✅ Validação de experiência realizada.")
+        print(" Validação de experiência realizada.")
     else:
-        print("⚠️ Atenção: Menção a 'anos' não encontrada.")
+        print(" Atenção: Menção a 'anos' não encontrada.")
     return aprovado
 
 def analisar_com_ia_e_contar_tokens(texto_curriculo):
@@ -55,7 +55,7 @@ def exibir_relatorio_custos(t_entrada, t_saida):
 if __name__ == "__main__":
     texto_extraido = extrair_texto_pdf("curriculos/curriculo_teste.pdf")
     if avaliar_filtros_rigidos(texto_extraido, 3, 10000):
-        print("✅ Candidato APROVADO nos filtros iniciais. Enviando para IA...")
+        print(" Candidato APROVADO nos filtros iniciais. Enviando para IA...")
         resultado_ia, tok_in, tok_out = analisar_com_ia_e_contar_tokens(texto_extraido)
         print("\n--- [Camada Generativa] Resultado da Análise ---")
         print(resultado_ia)
