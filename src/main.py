@@ -3,19 +3,9 @@ import re
 import pypdf
 import tiktoken
 
-# =========================================================
-# CONFIGURAÇÃO
-# =========================================================
-# Se True, usa uma resposta simulada (sem gastar créditos de API).
-# Se False, tenta chamar a API da Anthropic de verdade (precisa de
-# ANTHROPIC_API_KEY configurada como variável de ambiente e do pacote
-# 'anthropic' instalado -> pip install anthropic).
 MODO_SIMULADO_IA = True
 
 
-# =========================================================
-# 1) LEITURA E EXTRAÇÃO DE PDF
-# =========================================================
 def extrair_texto_pdf(caminho_pdf):
     """Extrai o texto bruto de um currículo em PDF."""
     if not os.path.exists(caminho_pdf):
@@ -36,9 +26,6 @@ def extrair_texto_pdf(caminho_pdf):
     return texto_completo
 
 
-# =========================================================
-# 2) CAMADA DETERMINÍSTICA (FILTROS RÍGIDOS)
-# =========================================================
 def extrair_anos_experiencia(texto_minusculo):
     """Procura um número seguido da palavra 'anos' no texto."""
     match = re.search(r"(\d+)\s*anos", texto_minusculo)
@@ -79,9 +66,6 @@ def avaliar_filtros_rigidos(texto, anos_minimos, salario_maximo):
     return filtro_experiencia_ok and filtro_salario_ok
 
 
-# =========================================================
-# 3) CAMADA GENERATIVA (IA) + CONTAGEM DE TOKENS
-# =========================================================
 def _obter_codificador():
     try:
         return tiktoken.encoding_for_model("gpt-4o-mini")
@@ -138,9 +122,6 @@ def analisar_com_ia_e_contar_tokens(texto_curriculo):
     return resposta_ia, tokens_entrada, tokens_saida
 
 
-# =========================================================
-# 4) RELATÓRIO DE CUSTOS
-# =========================================================
 def exibir_relatorio_custos(t_entrada, t_saida):
     # Preços de exemplo (por 1000 tokens), estilo gpt-4o-mini
     custo_total = ((t_entrada / 1000) * 0.00015) + ((t_saida / 1000) * 0.0006)
@@ -155,9 +136,6 @@ def exibir_relatorio_custos(t_entrada, t_saida):
     print("=============================================\n")
 
 
-# =========================================================
-# 5) FLUXO PRINCIPAL
-# =========================================================
 if __name__ == "__main__":
     caminho_curriculo = "curriculos/curriculo_teste.pdf"
     anos_minimos_vaga = 3
