@@ -1,0 +1,9 @@
+TURMA: 3ESPA
+PROJETO: Sistema de Triagem de Currículos Tech
+
+INTEGRANTES:
+- Nome: [Marcelo Affonso Fonseca] | RM: [559790]
+
+
+LINK DO REPOSITÓRIO:
+https://github.com/marcelo215/vaga-tech-triagem.git
