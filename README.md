@@ -1,6 +1,6 @@
 # Triagem Inteligente de Currículos
 
-Sistema em Python que automatiza a triagem de currículos para uma agência de empregos focada no ecossistema de tecnologia. O projeto combina regras de negócio determinísticas com análise de IA generativa, monitorando de forma rigorosa o consumo de tokens e o custo de cada execução.
+Sistema em Python que automatiza a triagem de currículos para uma agência de empregos focada no ecossistema de tecnologia. O projeto combina regras de negócio determinísticas com análise de IA generativa (rodando localmente via Ollama), monitorando o consumo de tokens e o custo estimado de cada execução.
 
 Desenvolvido como Checkpoint 1 da disciplina de IA & ML, sob orientação do professor Wellington Cidade Silva.
 
@@ -16,14 +16,14 @@ Antes de qualquer chamada a um modelo de IA, o sistema aplica filtros de negóci
 - Validação do tempo mínimo de experiência exigido pela vaga.
 - Compatibilidade da pretensão salarial do candidato com o orçamento disponível.
 
-Só os candidatos aprovados nessa etapa avançam para a análise generativa, o que evita gastar processamento e dinheiro com perfis que já não atendem aos requisitos mínimos.
+Só os candidatos aprovados nessa etapa avançam para a análise generativa. Isso evita gastar processamento com perfis que já não atendem aos requisitos mínimos.
 
 **3. Camada generativa**
-Para os candidatos aprovados, o sistema interage com um LLM para gerar:
-- Um parecer qualitativo sobre a senioridade e as soft skills implícitas no currículo.
-- Um resumo executivo customizado, pronto para ser enviado ao recrutador da empresa contratante.
+Para os candidatos aprovados, o sistema envia o currículo para um LLM rodando localmente através do [Ollama](https://ollama.com), que gera:
+- Um parecer sobre a senioridade e as soft skills implícitas no currículo.
+- Um resumo executivo do perfil, pronto para ser enviado ao recrutador.
 
-Cada execução dessa etapa é acompanhada de um relatório de consumo de tokens, contando separadamente os tokens de entrada (prompt) e de saída (completion) com a biblioteca `tiktoken`, além de uma estimativa de custo em dólares.
+Cada execução dessa etapa é acompanhada de um relatório de consumo de tokens, contando os tokens de entrada (prompt) e de saída (completion) com a biblioteca `tiktoken`, além de uma estimativa de custo equivalente caso fosse usada uma API paga.
 
 ## Estrutura do projeto
 
@@ -41,6 +41,8 @@ vaga-tech-triagem/
 ## Pré-requisitos
 
 - Python 3.10 ou superior
+- [Ollama](https://ollama.com) instalado e rodando na máquina
+- Modelo `llama3.2` baixado no Ollama
 - Dependências listadas em `requirements.txt`
 
 ## Instalação
@@ -49,9 +51,12 @@ vaga-tech-triagem/
 git clone <link-do-repositorio>
 cd vaga-tech-triagem
 pip install -r requirements.txt
+ollama pull llama3.2
 ```
 
 ## Execução
+
+Com o Ollama rodando em segundo plano, execute:
 
 ```bash
 python src/main.py
@@ -59,38 +64,35 @@ python src/main.py
 
 Caso o arquivo `curriculos/curriculo_teste.pdf` não seja encontrado, o sistema utiliza automaticamente um currículo de exemplo, garantindo que a demonstração funcione mesmo sem um PDF real disponível.
 
-## Modo de operação da IA
+## Por que Ollama em vez de uma API paga?
 
-Por padrão, o projeto roda com `MODO_SIMULADO_IA = True` em `main.py`, o que permite testar todo o fluxo sem necessidade de uma chave de API. Para usar um modelo de linguagem real, basta:
-
-1. Instalar o pacote correspondente (por exemplo, `pip install anthropic`).
-2. Configurar a variável de ambiente com a chave de API.
-3. Alterar `MODO_SIMULADO_IA` para `False` em `main.py`.
+O projeto usa um modelo rodando localmente em vez de uma API como OpenAI ou Anthropic por três motivos:
+- Não exige chave de API nem cadastro de cartão de crédito.
+- Elimina o risco de expor credenciais no repositório público do GitHub.
+- Continua atendendo ao requisito do enunciado de "interagir com um LLM", já que o modelo é uma IA generativa real, apenas executada localmente em vez de na nuvem.
 
 ## Exemplo de saída
 
 ```
---- [Camada Determinística] Aplicando Filtros Rígidos ---
-Buscando requisitos mínimos: 3 anos de exp / Orçamento máximo: R$ 10000
- Experiência encontrada: 5 ano(s)  -> APROVADO
- Pretensão salarial encontrada: R$ 8000.00  -> APROVADO
- Candidato APROVADO nos filtros iniciais. Enviando para IA...
+Checando os requisitos da vaga...
+Precisa de pelo menos 3 anos de experiência e orçamento até R$ 10000
+Anos de experiência encontrados: 5 (precisa de 3)
+Pretensão salarial encontrada: R$ 8000.00 (orçamento é R$ 10000)
+Candidato aprovado! Mandando para a IA analisar...
 
---- [Camada Generativa] Resultado da Análise ---
-### Resumo Executivo ###
-Profissional com sólida base técnica em Python, pronto para atuar em projetos de médio a alto nível de complexidade.
+Resultado da análise:
+**Resumo Executivo do Candidato:**
+Rafael Andrade Souza é um desenvolvedor backend experiente com 5 anos de experiência em Python...
 
-### Parecer Qualitativo ###
-Senioridade estimada: Pleno. Boa comunicação implícita pela clareza na descrição das experiências.
+**Parecer sobre a Senioridade do Candidato:**
+Com base no currículo apresentado, é possível concluir que Rafael Andrade Souza está em uma fase de transição para a senioridade...
 
-=============================================
-      RELATÓRIO DE CONSUMO DE TOKENS
-=============================================
-Tokens de Entrada (Prompt):    72
-Tokens de Saída (Completion):  56
-Total de Tokens Utilizados:    128
-Estimativa de Custo Total:     $0.000044 USD
-=============================================
+----- RESUMO DE TOKENS -----
+Tokens que entraram: 343
+Tokens que saíram: 407
+Total: 750
+Custo estimado (se fosse API paga): $0.000296
+-----------------------------
 ```
 
 ## Tecnologias utilizadas
@@ -98,6 +100,7 @@ Estimativa de Custo Total:     $0.000044 USD
 - Python
 - pypdf
 - tiktoken
+- Ollama (modelo llama3.2)
 - Git e GitHub
 
 ## Equipe
