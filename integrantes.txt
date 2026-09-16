@@ -3,6 +3,9 @@ PROJETO: Sistema de Triagem de Currículos Tech
 
 INTEGRANTES:
 - Nome: [Marcelo Affonso Fonseca] | RM: [559790]
+- Nome: [João Vitor de Matos] | RM: [559246]
+- Nome: [Gabriel Kato ] | RM: [560000]
+- Nome: [Gabriel Couto] | RM: [559579]
 
 
 LINK DO REPOSITÓRIO:
