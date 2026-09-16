@@ -1,3 +1,4 @@
 pypdf
 tiktoken
 openai
+requests

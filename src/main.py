@@ -1,156 +1,121 @@
 import os
 import re
+import requests
 import pypdf
 import tiktoken
 
-MODO_SIMULADO_IA = True
+# endereço do Ollama rodando na própria máquina
+OLLAMA_URL = "http://localhost:11434/api/chat"
+MODELO_IA = "llama3.2"
 
 
-def extrair_texto_pdf(caminho_pdf):
-    """Extrai o texto bruto de um currículo em PDF."""
-    if not os.path.exists(caminho_pdf):
-        print(f" Aviso: arquivo '{caminho_pdf}' não encontrado. Usando currículo de exemplo.")
-        return (
-            "Candidato: João Silva.\n"
-            "Experiência: 5 anos em Python.\n"
-            "Pretensão Salarial: R$ 8000.\n"
-        )
+def ler_curriculo(caminho):
+    # se o arquivo não existir, usa um texto de exemplo só pra não travar o teste
+    if not os.path.exists(caminho):
+        print(f"Não achei o arquivo '{caminho}', vou usar um currículo de exemplo.")
+        return "Candidato: João Silva. Experiência: 5 anos em Python. Pretensão Salarial: R$ 8000."
 
-    texto_completo = ""
-    with open(caminho_pdf, "rb") as arquivo:
-        leitor = pypdf.PdfReader(arquivo)
-        for pagina in leitor.pages:
-            texto = pagina.extract_text()
-            if texto:
-                texto_completo += texto + "\n"
-    return texto_completo
+    texto = ""
+    arquivo = open(caminho, "rb")
+    leitor = pypdf.PdfReader(arquivo)
+    for pagina in leitor.pages:
+        pedaco = pagina.extract_text()
+        if pedaco:
+            texto += pedaco + "\n"
+    arquivo.close()
+    return texto
 
 
-def extrair_anos_experiencia(texto_minusculo):
-    """Procura um número seguido da palavra 'anos' no texto."""
-    match = re.search(r"(\d+)\s*anos", texto_minusculo)
-    return int(match.group(1)) if match else 0
+def passou_nos_filtros(texto, anos_minimos, salario_maximo):
+    texto = texto.lower()
+
+    print("\nChecando os requisitos da vaga...")
+    print(f"Precisa de pelo menos {anos_minimos} anos de experiência e orçamento até R$ {salario_maximo}")
+
+    # tenta achar quantos anos de experiência tem no texto
+    achou_anos = re.search(r"(\d+)\s*anos", texto)
+    anos = int(achou_anos.group(1)) if achou_anos else 0
+
+    # tenta achar a pretensão salarial
+    achou_salario = re.search(r"r\$\s*([\d\.,]+)", texto)
+    if achou_salario:
+        salario = achou_salario.group(1).replace(".", "").replace(",", ".")
+        salario = float(salario)
+    else:
+        salario = 0
+
+    tem_experiencia_suficiente = anos >= anos_minimos
+    salario_cabe_no_orcamento = salario <= salario_maximo
+
+    print(f"Anos de experiência encontrados: {anos} (precisa de {anos_minimos})")
+    print(f"Pretensão salarial encontrada: R$ {salario:.2f} (orçamento é R$ {salario_maximo})")
+
+    return tem_experiencia_suficiente and salario_cabe_no_orcamento
 
 
-def extrair_pretensao_salarial(texto_minusculo):
-    """Procura um valor em R$ no texto (aceita formatos como 8000, 8.000, 8.000,00)."""
-    match = re.search(r"r\$\s*([\d\.,]+)", texto_minusculo)
-    if not match:
-        return 0.0
-    valor_str = match.group(1).replace(".", "").replace(",", ".")
+def perguntar_para_ia(texto_curriculo):
+    pergunta = (
+        f"Você é um recrutador técnico. Aqui está o currículo:\n{texto_curriculo}\n\n"
+        "Escreva um resumo executivo do candidato e um parecer sobre a senioridade dele."
+    )
+
+    # manda a pergunta pro Ollama, que precisa estar rodando na máquina
+    resposta_http = requests.post(
+        OLLAMA_URL,
+        json={
+            "model": MODELO_IA,
+            "messages": [{"role": "user", "content": pergunta}],
+            "stream": False,
+        },
+        timeout=120,
+    )
+    resposta_http.raise_for_status()
+    resposta = resposta_http.json()["message"]["content"]
+
+    # o tiktoken é só pra contar quantos "pedaços de palavra" (tokens) tem no texto
     try:
-        return float(valor_str)
-    except ValueError:
-        return 0.0
-
-
-def avaliar_filtros_rigidos(texto, anos_minimos, salario_maximo):
-    """Aplica as regras de negócio fixas ANTES de acionar a IA."""
-    texto_minusculo = texto.lower()
-
-    print("\n--- [Camada Determinística] Aplicando Filtros Rígidos ---")
-    print(f"Buscando requisitos mínimos: {anos_minimos} anos de exp / Orçamento máximo: R$ {salario_maximo}")
-
-    anos_candidato = extrair_anos_experiencia(texto_minusculo)
-    salario_candidato = extrair_pretensao_salarial(texto_minusculo)
-
-    filtro_experiencia_ok = anos_candidato >= anos_minimos
-    filtro_salario_ok = salario_candidato <= salario_maximo
-
-    status_exp = "APROVADO" if filtro_experiencia_ok else "REPROVADO"
-    status_sal = "APROVADO" if filtro_salario_ok else "REPROVADO"
-
-    print(f" Experiência encontrada: {anos_candidato} ano(s)  -> {status_exp}")
-    print(f" Pretensão salarial encontrada: R$ {salario_candidato:.2f}  -> {status_sal}")
-
-    return filtro_experiencia_ok and filtro_salario_ok
-
-
-def _obter_codificador():
-    try:
-        return tiktoken.encoding_for_model("gpt-4o-mini")
+        contador = tiktoken.encoding_for_model("gpt-4o-mini")
     except Exception:
-        return tiktoken.get_encoding("cl100k_base")
+        contador = tiktoken.get_encoding("cl100k_base")
+
+    tokens_de_entrada = len(contador.encode(pergunta))
+    tokens_de_saida = len(contador.encode(resposta))
+
+    return resposta, tokens_de_entrada, tokens_de_saida
 
 
-def _chamar_ia_simulada(prompt_sistema, prompt_usuario):
-    """Resposta fixa, usada apenas para não depender de chave de API."""
-    resposta_ia = (
-        "### Resumo Executivo ###\n"
-        "Profissional com sólida base técnica em Python, pronto para atuar em "
-        "projetos de médio a alto nível de complexidade.\n\n"
-        "### Parecer Qualitativo ###\n"
-        "Senioridade estimada: Pleno. Boa comunicação implícita pela clareza "
-        "na descrição das experiências."
-    )
-    return resposta_ia
+def mostrar_custo(tokens_entrada, tokens_saida):
+    # como o Ollama roda local, não tem custo de verdade, mas deixamos a estimativa
+    # no mesmo padrão de preço de mercado só pra fins de comparação (por 1000 tokens)
+    custo = (tokens_entrada / 1000 * 0.00015) + (tokens_saida / 1000 * 0.0006)
+
+    print("\n----- RESUMO DE TOKENS -----")
+    print(f"Tokens que entraram: {tokens_entrada}")
+    print(f"Tokens que saíram: {tokens_saida}")
+    print(f"Total: {tokens_entrada + tokens_saida}")
+    print(f"Custo estimado (se fosse API paga): ${custo:.6f}")
+    print("-----------------------------\n")
 
 
-def _chamar_ia_real(prompt_sistema, prompt_usuario):
-    """Chamada real a um LLM (Anthropic). Requer 'pip install anthropic'
-    e a variável de ambiente ANTHROPIC_API_KEY configurada."""
-    import anthropic
+# aqui começa o programa de verdade
+caminho_do_pdf = "curriculos/curriculo_teste.pdf"
+anos_minimos_da_vaga = 3
+orcamento_da_vaga = 10000
 
-    client = anthropic.Anthropic()
-    resposta = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=500,
-        system=prompt_sistema,
-        messages=[{"role": "user", "content": prompt_usuario}],
-    )
-    return resposta.content[0].text
+texto = ler_curriculo(caminho_do_pdf)
 
+if passou_nos_filtros(texto, anos_minimos_da_vaga, orcamento_da_vaga):
+    print("Candidato aprovado! Mandando para a IA analisar...")
 
-def analisar_com_ia_e_contar_tokens(texto_curriculo):
-    """Gera parecer qualitativo + resumo executivo e conta tokens de entrada/saída."""
-    prompt_sistema = "Você é um recrutador técnico especialista em tecnologia."
-    prompt_usuario = (
-        f"Currículo:\n{texto_curriculo}\n\n"
-        "Gere um ### Resumo Executivo ### customizado do perfil do candidato "
-        "e um ### Parecer Qualitativo ### sobre senioridade e soft skills implícitas."
-    )
-
-    codificador = _obter_codificador()
-    tokens_entrada = len(codificador.encode(prompt_sistema + prompt_usuario))
-
-    if MODO_SIMULADO_IA:
-        resposta_ia = _chamar_ia_simulada(prompt_sistema, prompt_usuario)
-    else:
-        resposta_ia = _chamar_ia_real(prompt_sistema, prompt_usuario)
-
-    tokens_saida = len(codificador.encode(resposta_ia))
-    return resposta_ia, tokens_entrada, tokens_saida
-
-
-def exibir_relatorio_custos(t_entrada, t_saida):
-    # Preços de exemplo (por 1000 tokens), estilo gpt-4o-mini
-    custo_total = ((t_entrada / 1000) * 0.00015) + ((t_saida / 1000) * 0.0006)
-
-    print("\n=============================================")
-    print("      RELATÓRIO DE CONSUMO DE TOKENS         ")
-    print("=============================================")
-    print(f"Tokens de Entrada (Prompt):    {t_entrada}")
-    print(f"Tokens de Saída (Completion):  {t_saida}")
-    print(f"Total de Tokens Utilizados:    {t_entrada + t_saida}")
-    print(f"Estimativa de Custo Total:     ${custo_total:.6f} USD")
-    print("=============================================\n")
-
-
-if __name__ == "__main__":
-    caminho_curriculo = "curriculos/curriculo_teste.pdf"
-    anos_minimos_vaga = 3
-    salario_maximo_vaga = 10000
-
-    texto_extraido = extrair_texto_pdf(caminho_curriculo)
-
-    if avaliar_filtros_rigidos(texto_extraido, anos_minimos_vaga, salario_maximo_vaga):
-        print(" Candidato APROVADO nos filtros iniciais. Enviando para IA...")
-
-        resultado_ia, tok_in, tok_out = analisar_com_ia_e_contar_tokens(texto_extraido)
-
-        print("\n--- [Camada Generativa] Resultado da Análise ---")
-        print(resultado_ia)
-
-        exibir_relatorio_custos(tok_in, tok_out)
-    else:
-        print(" Candidato REPROVADO nos filtros rígidos. Triagem encerrada sem custo de IA.")
+    try:
+        resposta_ia, tokens_in, tokens_out = perguntar_para_ia(texto)
+        print("\nResultado da análise:")
+        print(resposta_ia)
+        mostrar_custo(tokens_in, tokens_out)
+    except requests.exceptions.ConnectionError:
+        print(
+            "\nNão consegui falar com o Ollama. Confirme se ele está instalado e "
+            "rodando (abra http://localhost:11434 no navegador pra checar)."
+        )
+else:
+    print("Candidato não passou nos filtros. Nem vamos gastar com a IA.")
