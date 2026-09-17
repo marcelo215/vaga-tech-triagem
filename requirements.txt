@@ -1,4 +1,5 @@
 pypdf
 tiktoken
-openai
 requests
+flask
+markdown

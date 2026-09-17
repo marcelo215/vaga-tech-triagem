@@ -1,0 +1,25 @@
+services:
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama_data:/root/.ollama
+
+  app:
+    build: .
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/chat
+    ports:
+      - "5000:5000"
+    depends_on:
+      - ollama
+    command: >
+      sh -c "
+      python -c \"import requests, time;
+      time.sleep(3);
+      print('Baixando modelo llama3.2 no Ollama (isso pode demorar na primeira execução)...');
+      requests.post('http://ollama:11434/api/pull', json={'name':'llama3.2', 'stream':False})\";
+      python src/web.py
+      "
+
+volumes:
+  ollama_data:
