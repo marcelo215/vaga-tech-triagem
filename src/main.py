@@ -4,8 +4,7 @@ import requests
 import pypdf
 import tiktoken
 
-# endereço do Ollama rodando na própria máquina
-OLLAMA_URL = "http://localhost:11434/api/chat"
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
 MODELO_IA = "llama3.2"
 
 
@@ -16,50 +15,52 @@ def ler_curriculo(caminho):
         return "Candidato: João Silva. Experiência: 5 anos em Python. Pretensão Salarial: R$ 8000."
 
     texto = ""
-    arquivo = open(caminho, "rb")
-    leitor = pypdf.PdfReader(arquivo)
-    for pagina in leitor.pages:
-        pedaco = pagina.extract_text()
-        if pedaco:
-            texto += pedaco + "\n"
-    arquivo.close()
+    with open(caminho, "rb") as arquivo:
+        leitor = pypdf.PdfReader(arquivo)
+        for pagina in leitor.pages:
+            pedaco = pagina.extract_text()
+            if pedaco:
+                texto += pedaco + "\n"
     return texto
 
 
-def passou_nos_filtros(texto, anos_minimos, salario_maximo):
-    texto = texto.lower()
 
-    print("\nChecando os requisitos da vaga...")
-    print(f"Precisa de pelo menos {anos_minimos} anos de experiência e orçamento até R$ {salario_maximo}")
+def perguntar_para_ia(texto_curriculo, anos_minimos=0, orcamento_max=0):
+    """Envia o texto do currículo para o Ollama rodando o Llama 3.2 e pede uma análise baseada nas regras de negócio"""
+    
+    contexto_vaga = ""
+    if anos_minimos > 0 or orcamento_max > 0:
+        contexto_vaga = "--- REQUISITOS OBRIGATÓRIOS DA VAGA ---\n"
+        if anos_minimos > 0:
+            contexto_vaga += f"- Experiência Mínima Exigida: {anos_minimos} anos (você deve deduzir o tempo total de atuação profissional pelas datas).\n"
+        if orcamento_max > 0:
+            contexto_vaga += f"- Orçamento Máximo (Teto Salarial): R$ {orcamento_max:.2f}.\n"
+        contexto_vaga += "ATENÇÃO: Se o candidato tiver menos experiência que o mínimo, ou pedir um salário maior que o teto, ele deve receber uma nota BAIXA (abaixo de 60) e você deve focar sua análise em explicar o motivo da reprovação.\n---------------------------------------\n\n"
 
-    # tenta achar quantos anos de experiência tem no texto
-    achou_anos = re.search(r"(\d+)\s*anos", texto)
-    anos = int(achou_anos.group(1)) if achou_anos else 0
-
-    # tenta achar a pretensão salarial
-    achou_salario = re.search(r"r\$\s*([\d\.,]+)", texto)
-    if achou_salario:
-        salario = achou_salario.group(1).replace(".", "").replace(",", ".")
-        salario = float(salario)
-    else:
-        salario = 0
-
-    tem_experiencia_suficiente = anos >= anos_minimos
-    salario_cabe_no_orcamento = salario <= salario_maximo
-
-    print(f"Anos de experiência encontrados: {anos} (precisa de {anos_minimos})")
-    print(f"Pretensão salarial encontrada: R$ {salario:.2f} (orçamento é R$ {salario_maximo})")
-
-    return tem_experiencia_suficiente and salario_cabe_no_orcamento
-
-
-def perguntar_para_ia(texto_curriculo):
     pergunta = (
-        f"Você é um recrutador técnico. Aqui está o currículo:\n{texto_curriculo}\n\n"
-        "Escreva um resumo executivo do candidato e um parecer sobre a senioridade dele."
+        f"Você é um Tech Recruiter Sênior avaliando um currículo para vagas de Engenharia de Software e Tecnologia.\n\n"
+        f"{contexto_vaga}"
+        f"--- CURRÍCULO DO CANDIDATO ---\n{texto_curriculo}\n-------------------------------\n\n"
+        "Sua missão é realizar uma análise técnica profunda e criteriosa. Você deve retornar sua avaliação "
+        "seguindo EXATAMENTE a estrutura abaixo, sem inventar outros formatos:\n\n"
+        "### Resumo Executivo\n"
+        "[Seu texto...]\n\n"
+        "### Stack Tecnológico\n"
+        "[Seu texto...]\n\n"
+        "### Análise de Senioridade\n"
+        "[Seu texto...]\n\n"
+        "### Pontos Fortes/De Atenção\n"
+        "[Seu texto...]\n\n"
+        "<SCORE>0</SCORE>\n"
+        "(O '0' dentro da tag SCORE é apenas um exemplo. Substitua pela sua nota final da avaliação.)\n\n"
+        "REGRAS PARA O 'score':\n"
+        "- Deve ser APENAS um número inteiro de 0 a 100.\n"
+        "- Notas acima de 80: Candidatos excepcionais que atendem todos os requisitos.\n"
+        "- Notas entre 60 e 79: Candidatos bons, mas com pontos de atenção.\n"
+        "- Notas abaixo de 60: Perfis imaturos, currículos fracos, ou que violam os Requisitos Obrigatórios da Vaga (falta de experiência ou salário incompatível)."
     )
 
-    # manda a pergunta pro Ollama, que precisa estar rodando na máquina
+    # manda a pergunta pro Ollama (sem forçar JSON, deixando ele usar as XML Tags naturalmente)
     resposta_http = requests.post(
         OLLAMA_URL,
         json={
@@ -84,38 +85,57 @@ def perguntar_para_ia(texto_curriculo):
     return resposta, tokens_de_entrada, tokens_de_saida
 
 
-def mostrar_custo(tokens_entrada, tokens_saida):
-    # como o Ollama roda local, não tem custo de verdade, mas deixamos a estimativa
-    # no mesmo padrão de preço de mercado só pra fins de comparação (por 1000 tokens)
-    custo = (tokens_entrada / 1000 * 0.00015) + (tokens_saida / 1000 * 0.0006)
+if __name__ == "__main__":
+    import sys
 
-    print("\n----- RESUMO DE TOKENS -----")
-    print(f"Tokens que entraram: {tokens_entrada}")
-    print(f"Tokens que saíram: {tokens_saida}")
-    print(f"Total: {tokens_entrada + tokens_saida}")
-    print(f"Custo estimado (se fosse API paga): ${custo:.6f}")
-    print("-----------------------------\n")
+    C_AZUL = '\033[94m'
+    C_VERDE = '\033[92m'
+    C_AMARELO = '\033[93m'
+    C_VERMELHO = '\033[91m'
+    C_NEGRITO = '\033[1m'
+    C_RESET = '\033[0m'
 
+    print(f"{C_AZUL}{C_NEGRITO}      SISTEMA DE TRIAGEM DE CURRÍCULOS              {C_RESET}\n")
 
-# aqui começa o programa de verdade
-caminho_do_pdf = "curriculos/curriculo_teste.pdf"
-anos_minimos_da_vaga = 3
-orcamento_da_vaga = 10000
+    caminho_do_pdf = "curriculos/curriculo_teste.pdf"
+    
+    # Coleta de Parâmetros de Negócio
+    print(f"{C_AMARELO}Configuração dos Filtros da Vaga:{C_RESET}")
+    
+    anos_minimos = 0
+    while True:
+        try:
+            inp = input("Anos mínimos de experiência exigidos. [0 para pular]: ")
+            anos_minimos = int(inp) if inp.strip() != "" else 0
+            break
+        except ValueError:
+            print(f"{C_VERMELHO}Erro: Por favor, digite apenas um número inteiro.{C_RESET}")
+            
+    orcamento_max = 0.0
+    while True:
+        try:
+            inp = input("Teto salarial máximo. [0 para pular]: ")
+            orcamento_max = float(inp) if inp.strip() != "" else 0.0
+            break
+        except ValueError:
+            print(f"{C_VERMELHO}Erro: Por favor, digite um número válido (use ponto para decimais).{C_RESET}")
 
-texto = ler_curriculo(caminho_do_pdf)
+    print(f"\n{C_AMARELO}[1/2] Lendo o currículo...{C_RESET}")
+    texto = ler_curriculo(caminho_do_pdf)
 
-if passou_nos_filtros(texto, anos_minimos_da_vaga, orcamento_da_vaga):
-    print("Candidato aprovado! Mandando para a IA analisar...")
-
+    print(f"{C_AMARELO}[2/2] Pensando...{C_RESET}")
+    
     try:
-        resposta_ia, tokens_in, tokens_out = perguntar_para_ia(texto)
-        print("\nResultado da análise:")
-        print(resposta_ia)
-        mostrar_custo(tokens_in, tokens_out)
-    except requests.exceptions.ConnectionError:
-        print(
-            "\nNão consegui falar com o Ollama. Confirme se ele está instalado e "
-            "rodando (abra http://localhost:11434 no navegador pra checar)."
-        )
-else:
-    print("Candidato não passou nos filtros. Nem vamos gastar com a IA.")
+        resposta_ia, tokens_in, tokens_out = perguntar_para_ia(texto, anos_minimos, orcamento_max)
+        
+        print(f"\n{C_VERDE}{C_NEGRITO}RESULTADO DA AVALIAÇÃO{C_RESET}")
+        print(f"\n{resposta_ia}\n")
+        
+        print(f"{C_AZUL}{C_NEGRITO}ESTATÍSTICAS DE CONSUMO{C_RESET}")
+        custo = (tokens_in / 1000 * 0.00015) + (tokens_out / 1000 * 0.0006)
+        print(f"Tokens Entrada: {tokens_in}")
+        print(f"Tokens Saída:   {tokens_out}")
+        print(f"Custo Estimado: ${custo:.6f}")
+        
+    except Exception as e:
+        print(f"\n{C_VERMELHO}Erro: {e}{C_RESET}")
